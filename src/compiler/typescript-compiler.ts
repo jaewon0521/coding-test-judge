@@ -1,4 +1,5 @@
 import ts from "typescript";
+import { formatCompileError } from "./compile-error";
 import type { CompileResult, Compiler } from "./compiler";
 
 export class TypeScriptCompiler implements Compiler {
@@ -18,7 +19,7 @@ export class TypeScriptCompiler implements Compiler {
     if (errors.length > 0) {
       return {
         ok: false,
-        error: errors.map(formatDiagnostic).join("\n"),
+        error: formatCompileError(errors.map(formatDiagnostic).join("\n")),
       };
     }
 

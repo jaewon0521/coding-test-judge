@@ -33,5 +33,6 @@ describe("TypeScriptCompiler", () => {
     }
 
     expect(result.error.length).toBeGreaterThan(0);
+    expect(result.error).not.toBe("Compile error");
   });
 });
