@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 
+import { formatRuntimeError } from "./error-message";
 import { runSolution } from "./run-solution";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol";
 
@@ -28,7 +29,7 @@ workerScope.onmessage = (event: MessageEvent<WorkerRequest>) => {
       type: "result",
       requestId: message.requestId,
       status: "runtime-error",
-      error: error instanceof Error ? error.message : String(error),
+      error: formatRuntimeError(error),
       executionTime: performance.now() - startedAt,
     };
     workerScope.postMessage(response);

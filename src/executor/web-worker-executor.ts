@@ -1,18 +1,22 @@
 import type { ExecutionResult } from "@/domain/execution";
 import type { Compiler } from "@/compiler/compiler";
+import { formatCompileError } from "@/compiler/compile-error";
+import { formatRuntimeError } from "./error-message";
 import type { Executor } from "./executor";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol";
+
+export type WorkerEventType = "message" | "error" | "messageerror";
 
 export interface WorkerLike {
   postMessage(message: unknown): void;
   terminate(): void;
   addEventListener(
-    type: "message",
-    listener: (event: MessageEvent) => void,
+    type: WorkerEventType,
+    listener: (event: Event) => void,
   ): void;
   removeEventListener(
-    type: "message",
-    listener: (event: MessageEvent) => void,
+    type: WorkerEventType,
+    listener: (event: Event) => void,
   ): void;
 }
 
@@ -46,7 +50,7 @@ export class WebWorkerExecutor implements Executor {
     if (!compiled.ok) {
       return {
         status: "compile-error",
-        error: compiled.error,
+        error: formatCompileError(compiled.error),
       };
     }
 
@@ -63,13 +67,20 @@ export class WebWorkerExecutor implements Executor {
         settled = true;
         clearTimeout(timer);
         worker.removeEventListener("message", onMessage);
+        worker.removeEventListener("error", onError);
+        worker.removeEventListener("messageerror", onMessageError);
         worker.terminate();
         resolve(result);
       };
 
-      const onMessage = (event: MessageEvent<WorkerResponse>) => {
-        const data = event.data;
-        if (data.type !== "result" || data.requestId !== requestId) {
+      const onMessage = (event: Event) => {
+        const data = (event as MessageEvent<WorkerResponse>).data;
+        if (
+          !data ||
+          data.type !== "result" ||
+          data.requestId !== requestId ||
+          settled
+        ) {
           return;
         }
 
@@ -84,8 +95,41 @@ export class WebWorkerExecutor implements Executor {
 
         finish({
           status: "runtime-error",
-          error: data.error,
+          error: formatRuntimeError(data.error),
           executionTime: data.executionTime,
+        });
+      };
+
+      const onError = (event: Event) => {
+        if (settled) {
+          return;
+        }
+
+        const record = event as Event & {
+          message?: unknown;
+          error?: unknown;
+        };
+        const message =
+          typeof record.message === "string" && record.message.trim().length > 0
+            ? record.message
+            : record.error !== undefined
+              ? record.error
+              : event;
+
+        finish({
+          status: "runtime-error",
+          error: formatRuntimeError(message),
+        });
+      };
+
+      const onMessageError = () => {
+        if (settled) {
+          return;
+        }
+
+        finish({
+          status: "runtime-error",
+          error: "Worker message error",
         });
       };
 
@@ -97,6 +141,8 @@ export class WebWorkerExecutor implements Executor {
       }, this.timeoutMs);
 
       worker.addEventListener("message", onMessage);
+      worker.addEventListener("error", onError);
+      worker.addEventListener("messageerror", onMessageError);
 
       const request: WorkerRequest = {
         type: "execute",
